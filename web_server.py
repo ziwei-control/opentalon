@@ -32,6 +32,9 @@ from core.multimodal import (
     SUPPORTED_AUDIO_FORMATS
 )
 
+# 导入搜索模块
+from core.search import search_web, search_news, fetch_webpage_content
+
 app = Flask(__name__)
 CORS(app)
 
@@ -134,7 +137,7 @@ def test_config():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """文字聊天（支持带图片）"""
+    """文字聊天（支持带图片和联网搜索）"""
     data = request.json
     if not data:
         return jsonify({'success': False, 'error': '消息不能为空'})
@@ -150,12 +153,40 @@ def chat():
     base_url = config.get('base_url', 'https://api.openai.com/v1')
     model = config.get('model', 'gpt-3.5-turbo')
     
-    # 构建消息
+    # 检测是否需要联网搜索
+    search_keywords = ['新闻', 'news', '最新', 'latest', '今天', 'today', '当前', 'current', 
+                       '版本', 'version', '实时', 'real-time', '搜索', 'search',
+                       '天气', 'weather', '股票', 'stock', '价格', 'price', '汇率', 'rate']
+    
+    need_search = any(kw in message.lower() for kw in search_keywords) and not image_data
+    
+    # 如果需要搜索，先获取实时信息
+    search_context = ""
+    if need_search:
+        try:
+            # 搜索网页
+            web_results = search_web(message, num_results=5)
+            if web_results and 'error' not in web_results[0]:
+                search_context = "\n\n📊 实时搜索结果：\n"
+                for i, r in enumerate(web_results[:3], 1):
+                    if 'title' in r and 'url' in r:
+                        search_context += f"{i}. {r['title']} - {r['url']}\n"
+                
+                # 如果是新闻相关，再搜索新闻
+                if any(kw in message for kw in ['新闻', 'news', '今天', 'today', '最新']):
+                    news_results = search_news(message, num_results=3)
+                    if news_results and 'error' not in news_results[0]:
+                        search_context += "\n📰 最新新闻：\n"
+                        for n in news_results[:3]:
+                            if 'title' in n and 'url' in n:
+                                search_context += f"• {n['title']}\n"
+        except Exception as e:
+            search_context = f"\n\n⚠️ 搜索暂时不可用：{str(e)}"
+    
+    # 构建消息（带搜索上下文）
     if image_data:
         # 有图片，使用视觉模型
-        # 通义千问使用原生 API
         if 'dashscope' in base_url:
-            # Qwen 原生 API 格式
             url = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'
             headers = {
                 'Authorization': f'Bearer {api_key}',
@@ -167,7 +198,7 @@ def chat():
                     'messages': [{
                         'role': 'user',
                         'content': [
-                            {'image': image_data},  # base64 或 URL
+                            {'image': image_data},
                             {'text': message or '请描述这张图片'}
                         ]
                     }]
@@ -182,13 +213,11 @@ def chat():
                 response = requests.post(url, headers=headers, json=payload, timeout=120)
                 response.raise_for_status()
                 result = response.json()
-                # Qwen 原生 API 响应格式
                 content = result['output']['choices'][0]['message']['content']
                 return jsonify({'success': True, 'response': content})
             except Exception as e:
                 return jsonify({'success': False, 'error': f'请求失败：{str(e)}'})
         else:
-            # OpenAI/Kimi 格式
             messages = [{
                 'role': 'user',
                 'content': [
@@ -197,7 +226,6 @@ def chat():
                 ]
             }]
             
-            # 使用视觉模型
             vision_models = ['gpt-4o', 'gpt-4-turbo', 'gpt-4-vision', 'qwen-vl', 'claude-3']
             if not any(vm in model.lower() for vm in vision_models):
                 if 'moonshot' in base_url:
@@ -205,10 +233,16 @@ def chat():
                 elif 'openai' in base_url:
                     model = 'gpt-4o'
     else:
-        # 纯文字
-        messages = [{'role': 'user', 'content': message}]
+        # 纯文字（带搜索上下文）
+        if search_context:
+            messages = [{
+                'role': 'user',
+                'content': f"{message}{search_context}\n\n请根据以上实时信息回答用户的问题。"
+            }]
+        else:
+            messages = [{'role': 'user', 'content': message}]
     
-    # 调用 LLM (非 Qwen 图片情况)
+    # 调用 LLM
     if not image_data or 'dashscope' not in base_url:
         url = f"{base_url}/chat/completions"
         headers = {
