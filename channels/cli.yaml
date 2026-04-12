@@ -1,0 +1,109 @@
+---
+# OpenTalon CLI 通道配置
+# 命令行接口 - 最基础的交互方式
+---
+
+## 通道信息
+
+**名称**: cli
+
+**类型**: 命令行接口
+
+**状态**: ✅ 启用
+
+---
+
+## 配置参数
+
+```yaml
+cli:
+  enabled: true
+  prompt: "🤖 Talon > "
+  history_file: "~/.opentalon/cli_history"
+  max_history: 1000
+  
+  # 输入处理
+  input:
+    multiline: true  # 支持多行输入
+    exit_commands: ["exit", "quit", "/q"]
+    help_commands: ["help", "/h", "?"]
+  
+  # 输出格式
+  output:
+    color: true      # 彩色输出
+    markdown: true   # Markdown 渲染
+    stream: true     # 流式输出
+  
+  # 快捷键
+  shortcuts:
+    "Ctrl+C": "cancel_current_task"
+    "Ctrl+D": "exit"
+    "Ctrl+L": "clear_screen"
+    "Ctrl+R": "search_history"
+```
+
+---
+
+## 消息格式
+
+### 输入格式
+
+```
+用户输入 → 原始文本 → 网关解析 → 标准事件
+```
+
+### 输出格式
+
+```
+智能体响应 → Markdown → 终端渲染 → 用户看到
+```
+
+### 特殊命令
+
+| 命令 | 功能 |
+|------|------|
+| `/help` | 显示帮助 |
+| `/clear` | 清空屏幕 |
+| `/history` | 查看历史 |
+| `/config` | 查看配置 |
+| `/skills` | 列出技能 |
+| `/memory` | 查看记忆 |
+| `/exit` | 退出 |
+
+---
+
+## 使用示例
+
+```bash
+# 启动 CLI
+opentalon cli start
+
+# 交互示例
+🤖 Talon > 帮我搜索一下 MEMORY.md 里的决策
+🤖 Talon > 找到 3 处匹配...
+
+🤖 Talon > /skills
+🤖 Talon > 已安装技能: file-search
+
+🤖 Talon > /exit
+👋 再见！
+```
+
+---
+
+## 实现说明
+
+CLI 通道是最基础的交互方式，应该：
+
+1. **快速响应** - 命令行用户期望即时反馈
+2. **支持管道** - 可以与其他命令行工具配合
+3. **彩色输出** - 提高可读性
+4. **历史记录** - 方便回顾和复用
+
+---
+
+## 更新历史
+
+| 日期 | 版本 | 更新内容 |
+|------|------|---------|
+| 2026-04-09 | 0.1.0 | 初始版本 |

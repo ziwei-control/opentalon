@@ -1,0 +1,279 @@
+---
+# OpenTalon 网关路由配置
+# 定义消息如何路由到不同的智能体
+---
+
+## 网关信息
+
+**版本**: 0.1.0
+
+**模式**: 单智能体 (默认)
+
+---
+
+## 路由规则
+
+### 默认路由
+
+```yaml
+default:
+  agent: Talon
+  workspace: workspace/
+  fallback: true
+```
+
+### 智能路由
+
+```yaml
+routes:
+  # 代码开发相关 → DevBot
+  - name: development
+    patterns:
+      - ".*写代码.*"
+      - ".*debug.*"
+      - ".*bug.*"
+      - ".*重构.*"
+      - ".*测试.*"
+      - ".*代码.*"
+    agent: DevBot
+    priority: high
+    
+  # 数据分析相关 → DataBot
+  - name: data-analysis
+    patterns:
+      - ".*分析.*"
+      - ".*数据.*"
+      - ".*统计.*"
+      - ".*图表.*"
+      - ".*可视化.*"
+    agent: DataBot
+    priority: normal
+    
+  # 运维部署相关 → OpsBot
+  - name: operations
+    patterns:
+      - ".*部署.*"
+      - ".*运维.*"
+      - ".*服务器.*"
+      - ".*配置.*"
+      - ".*安装.*"
+    agent: OpsBot
+    priority: high
+    
+  # 文档写作相关 → DocBot
+  - name: documentation
+    patterns:
+      - ".*写文档.*"
+      - ".*翻译.*"
+      - ".*润色.*"
+      - ".*报告.*"
+    agent: DocBot
+    priority: normal
+    
+  # 安全检查相关 → SecBot
+  - name: security
+    patterns:
+      - ".*安全.*"
+      - ".*审计.*"
+      - ".*漏洞.*"
+      - ".*权限.*"
+    agent: SecBot
+    priority: high
+```
+
+---
+
+## 智能体定义
+
+```yaml
+agents:
+  Talon:
+    type: general
+    description: 通用智能体 - 默认处理器
+    workspace: workspace/
+    config:
+      soul: workspace/SOUL.md
+      user: workspace/USER.md
+      memory: workspace/MEMORY.md
+    permissions:
+      - read_files
+      - write_files
+      - execute_safe
+    status: active
+    
+  DevBot:
+    type: specialist
+    description: 开发专家 - 代码相关任务
+    workspace: workspace/
+    config:
+      soul: workspace/SOUL.md
+      specialty: development
+    permissions:
+      - read_files
+      - write_files
+      - execute_code
+    status: standby
+    
+  OpsBot:
+    type: specialist
+    description: 运维专家 - 部署和配置
+    workspace: workspace/
+    config:
+      soul: workspace/SOUL.md
+      specialty: operations
+    permissions:
+      - read_files
+      - write_files
+      - execute_commands
+    status: standby
+    
+  DataBot:
+    type: specialist
+    description: 数据专家 - 分析和可视化
+    workspace: workspace/
+    config:
+      soul: workspace/SOUL.md
+      specialty: data
+    permissions:
+      - read_files
+      - write_files
+      - execute_analysis
+    status: standby
+    
+  DocBot:
+    type: specialist
+    description: 文档专家 - 写作和翻译
+    workspace: workspace/
+    config:
+      soul: workspace/SOUL.md
+      specialty: documentation
+    permissions:
+      - read_files
+      - write_files
+    status: standby
+    
+  SecBot:
+    type: specialist
+    description: 安全专家 - 审计和检查
+    workspace: workspace/
+    config:
+      soul: workspace/SOUL.md
+      specialty: security
+    permissions:
+      - read_files
+      - scan_files
+      - security_check
+    status: standby
+```
+
+---
+
+## 优先级处理
+
+```yaml
+priority:
+  # 紧急任务 - 立即处理
+  high:
+    timeout: 60  # 秒
+    interrupt: true
+    notify: true
+    
+  # 普通任务 - 排队处理
+  normal:
+    timeout: 300  # 秒
+    interrupt: false
+    notify: false
+    
+  # 低优任务 - 空闲时处理
+  low:
+    timeout: 3600  # 秒
+    interrupt: false
+    notify: false
+```
+
+---
+
+## 消息处理流程
+
+```
+1. 接收消息
+   ↓
+2. 身份验证
+   ↓
+3. 解析内容
+   ↓
+4. 匹配路由规则
+   ↓
+5. 选择智能体
+   ↓
+6. 加载上下文 (SOUL + USER + MEMORY)
+   ↓
+7. 调用 LLM
+   ↓
+8. 执行动作 (技能/命令)
+   ↓
+9. 格式化响应
+   ↓
+10. 返回结果
+```
+
+---
+
+## 安全配置
+
+```yaml
+security:
+  # 沙箱配置
+  sandbox:
+    enabled: true
+    allowed_paths:
+      - workspace/
+      - skills/
+      - memory/
+    
+  # 命令黑名单
+  blocked_commands:
+    - "rm -rf /*"
+    - "sudo *"
+    - "curl * | bash"
+    - "wget * | bash"
+    
+  # 网络访问
+  network:
+    enabled: false  # 默认禁用
+    whitelist: []
+    
+  # 速率限制
+  rate_limit:
+    requests_per_minute: 60
+    burst: 10
+```
+
+---
+
+## 日志配置
+
+```yaml
+logging:
+  level: info
+  file: logs/gateway.log
+  format: "[%(asctime)s] %(levelname)s - %(message)s"
+  
+  # 审计日志
+  audit:
+    enabled: true
+    file: logs/audit.log
+    include:
+      - message_received
+      - route_matched
+      - agent_invoked
+      - action_executed
+```
+
+---
+
+## 更新历史
+
+| 日期 | 版本 | 更新内容 |
+|------|------|---------|
+| 2026-04-09 | 0.1.0 | 初始版本 |
