@@ -12,6 +12,7 @@ import os
 import sys
 import json
 import base64
+import requests
 from pathlib import Path
 from flask import Flask, render_template_string, request, jsonify
 from flask_cors import CORS
@@ -53,8 +54,6 @@ def save_llm_config(config):
 
 # 简单的 LLM 调用
 def call_llm(messages):
-    import requests
-    
     config = load_llm_config()
     if not config:
         return "❌ LLM 未配置，请在网页设置中配置 API Key"
@@ -278,8 +277,6 @@ def cleanup():
 
 def test_llm_connection(config):
     """测试 LLM 连接"""
-    import requests
-    
     api_key = config.get('api_key', '')
     base_url = config.get('base_url', 'https://api.openai.com/v1')
     model = config.get('model', 'gpt-3.5-turbo')
