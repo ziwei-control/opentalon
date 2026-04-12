@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-OpenTalon Web 界面 (多模态增强版)
+OpenTalon Web 界面 (黑色主题版)
 支持：
-- 网页配置 API Key
-- 图片上传与识别
-- 音频上传与语音识别
-- 公网访问
+- 黑色主题 UI
+- 聊天框直接上传图片
+- 图片识别和提问
+- 亮绿色文字配色
 """
 
 import os
 import sys
 import json
+import base64
 from pathlib import Path
 from flask import Flask, render_template_string, request, jsonify
 from flask_cors import CORS
@@ -134,18 +135,67 @@ def test_config():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """文字聊天"""
+    """文字聊天（支持带图片）"""
     data = request.json
-    if not data or 'message' not in data:
+    if not data:
         return jsonify({'success': False, 'error': '消息不能为空'})
     
-    message = data['message']
-    response = call_llm([{'role': 'user', 'content': message}])
+    message = data.get('message', '')
+    image_data = data.get('image', None)  # base64 图片数据
     
-    return jsonify({
-        'success': True,
-        'response': response
-    })
+    config = load_llm_config()
+    if not config:
+        return jsonify({'success': False, 'error': 'LLM 未配置'})
+    
+    api_key = config.get('api_key', '')
+    base_url = config.get('base_url', 'https://api.openai.com/v1')
+    model = config.get('model', 'gpt-3.5-turbo')
+    
+    # 构建消息
+    if image_data:
+        # 有图片，使用视觉模型
+        messages = [{
+            'role': 'user',
+            'content': [
+                {'type': 'text', 'text': message or '请描述这张图片'},
+                {'type': 'image_url', 'image_url': {'url': image_data}}
+            ]
+        }]
+        
+        # 使用视觉模型
+        vision_models = ['gpt-4o', 'gpt-4-turbo', 'gpt-4-vision', 'qwen-vl', 'claude-3']
+        if not any(vm in model.lower() for vm in vision_models):
+            if 'moonshot' in base_url:
+                model = 'moonshot-v1-128k'
+            elif 'dashscope' in base_url:
+                model = 'qwen-vl-max'
+            elif 'openai' in base_url:
+                model = 'gpt-4o'
+    else:
+        # 纯文字
+        messages = [{'role': 'user', 'content': message}]
+    
+    # 调用 LLM
+    url = f"{base_url}/chat/completions"
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'model': model,
+        'messages': messages,
+        'temperature': config.get('temperature', 0.7),
+        'max_tokens': config.get('max_tokens', 4096)
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=120)
+        response.raise_for_status()
+        data = response.json()
+        result = data['choices'][0]['message']['content']
+        return jsonify({'success': True, 'response': result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'请求失败：{str(e)}'})
 
 
 @app.route('/api/upload/image', methods=['POST'])
@@ -260,7 +310,7 @@ def test_llm_connection(config):
         }
 
 
-# ==================== HTML 模板 ====================
+# ==================== HTML 模板（黑色主题） ====================
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -268,7 +318,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🤖 OpenTalon - 多模态 Web 界面</title>
+    <title>pandaco.asia - AI Assistant</title>
     <style>
         * {
             margin: 0;
@@ -277,98 +327,115 @@ HTML_TEMPLATE = """
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+            background: #0a0a0a;
+            color: #00ff00;
             min-height: 100vh;
-            padding: 20px;
+            display: flex;
+            flex-direction: column;
         }
         
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-        
+        /* 头部 */
         header {
-            text-align: center;
-            color: white;
-            margin-bottom: 20px;
+            background: #111;
+            border-bottom: 1px solid #00ff00;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
-        header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff00;
+            text-decoration: none;
+            letter-spacing: 2px;
         }
         
-        header p {
-            opacity: 0.9;
-            font-size: 1.1em;
+        .logo:hover {
+            text-shadow: 0 0 10px #00ff00;
         }
         
+        .header-status {
+            font-size: 12px;
+            color: #00aa00;
+        }
+        
+        /* 导航 */
         .nav-tabs {
             display: flex;
-            margin-bottom: 20px;
+            background: #111;
+            border-bottom: 1px solid #333;
         }
         
         .nav-tab {
             flex: 1;
             padding: 15px;
-            background: rgba(255,255,255,0.2);
-            color: white;
+            background: transparent;
+            color: #00aa00;
             border: none;
+            border-bottom: 2px solid transparent;
             cursor: pointer;
-            font-size: 16px;
-            transition: background 0.3s;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.3s;
         }
         
-        .nav-tab:first-child {
-            border-radius: 10px 0 0 10px;
-        }
-        
-        .nav-tab:last-child {
-            border-radius: 0 10px 10px 0;
+        .nav-tab:hover {
+            background: #1a1a1a;
+            color: #00ff00;
         }
         
         .nav-tab.active {
-            background: white;
-            color: #667eea;
-            font-weight: bold;
+            background: #1a1a1a;
+            color: #00ff00;
+            border-bottom-color: #00ff00;
         }
         
-        .nav-tab:hover:not(.active) {
-            background: rgba(255,255,255,0.3);
+        /* 主容器 */
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 20px;
         }
         
         .chat-container, .config-container, .multimodal-container {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            overflow: hidden;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
         }
         
         .config-container, .multimodal-container {
             display: none;
         }
         
-        .config-container.active, .multimodal-container.active {
-            display: block;
-        }
-        
-        .chat-container.hidden {
+        .chat-container.hidden, .config-container.hidden, .multimodal-container.hidden {
             display: none;
         }
         
+        /* 聊天消息区域 */
         .chat-messages {
-            height: 500px;
+            flex: 1;
             overflow-y: auto;
             padding: 20px;
-            background: #f8f9fa;
+            background: #0f0f0f;
+            border: 1px solid #333;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            min-height: 500px;
         }
         
         .message {
             margin-bottom: 20px;
             padding: 15px;
-            border-radius: 10px;
+            border-radius: 8px;
             animation: fadeIn 0.3s ease;
+            max-width: 80%;
         }
         
         @keyframes fadeIn {
@@ -377,65 +444,126 @@ HTML_TEMPLATE = """
         }
         
         .message.user {
-            background: #667eea;
-            color: white;
-            margin-left: 20%;
+            background: #1a3a1a;
+            color: #00ff00;
+            margin-left: auto;
+            border: 1px solid #00aa00;
         }
         
         .message.assistant {
-            background: white;
-            color: #333;
-            margin-right: 20%;
-            border: 1px solid #e0e0e0;
+            background: #1a1a1a;
+            color: #00ff00;
+            margin-right: auto;
+            border: 1px solid #333;
         }
         
         .message.error {
-            background: #fee;
-            color: #c00;
-            margin-right: 20%;
+            background: #3a1a1a;
+            color: #ff6666;
+            border: 1px solid #ff0000;
+        }
+        
+        .message-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 8px;
+            margin-top: 10px;
+            border: 1px solid #00aa00;
+        }
+        
+        /* 输入区域 */
+        .chat-input-area {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        
+        .image-preview-container {
+            display: none;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #1a1a1a;
+            border-radius: 8px;
+            border: 1px solid #00aa00;
+        }
+        
+        .image-preview {
+            max-width: 200px;
+            max-height: 150px;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        
+        .remove-image {
+            background: #3a1a1a;
+            color: #ff6666;
+            border: 1px solid #ff0000;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: center;
         }
         
         .chat-input {
-            display: flex;
-            padding: 20px;
-            border-top: 1px solid #e0e0e0;
-        }
-        
-        .chat-input input {
             flex: 1;
-            padding: 15px;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            font-size: 16px;
+            padding: 12px 15px;
+            background: #0a0a0a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #00ff00;
+            font-size: 14px;
+            font-family: inherit;
             outline: none;
         }
         
-        .chat-input input:focus {
-            border-color: #667eea;
+        .chat-input:focus {
+            border-color: #00ff00;
         }
         
-        .chat-input button {
-            margin-left: 10px;
-            padding: 15px 30px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
+        .chat-input::placeholder {
+            color: #006600;
+        }
+        
+        .upload-btn, .send-btn {
+            padding: 12px 20px;
+            background: #1a3a1a;
+            color: #00ff00;
+            border: 1px solid #00aa00;
+            border-radius: 8px;
+            font-size: 14px;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: all 0.3s;
+            font-family: inherit;
         }
         
-        .chat-input button:hover {
-            background: #5568d3;
+        .upload-btn:hover, .send-btn:hover {
+            background: #2a5a2a;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
         }
         
-        .chat-input button:disabled {
-            background: #ccc;
+        .upload-btn:disabled, .send-btn:disabled {
+            background: #333;
+            border-color: #555;
+            color: #666;
             cursor: not-allowed;
         }
         
+        .file-input {
+            display: none;
+        }
+        
+        /* 配置表单 */
         .config-form {
+            background: #0f0f0f;
+            border: 1px solid #333;
+            border-radius: 8px;
             padding: 30px;
         }
         
@@ -446,27 +574,31 @@ HTML_TEMPLATE = """
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            font-weight: bold;
-            color: #333;
+            color: #00ff00;
+            font-size: 14px;
         }
         
         .form-group input, .form-group select {
             width: 100%;
             padding: 12px;
-            border: 1px solid #ddd;
+            background: #0a0a0a;
+            border: 1px solid #333;
             border-radius: 8px;
+            color: #00ff00;
             font-size: 14px;
+            font-family: inherit;
         }
         
         .form-group input:focus, .form-group select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #00ff00;
         }
         
         .form-group small {
             display: block;
             margin-top: 5px;
-            color: #666;
+            color: #006600;
+            font-size: 12px;
         }
         
         .btn {
@@ -476,141 +608,66 @@ HTML_TEMPLATE = """
             font-size: 14px;
             cursor: pointer;
             transition: all 0.3s;
+            font-family: inherit;
+            margin-right: 10px;
         }
         
         .btn-primary {
-            background: #667eea;
-            color: white;
+            background: #1a3a1a;
+            color: #00ff00;
+            border: 1px solid #00aa00;
         }
         
         .btn-primary:hover {
-            background: #5568d3;
+            background: #2a5a2a;
         }
         
         .btn-success {
-            background: #28a745;
-            color: white;
+            background: #1a5a1a;
+            color: #00ff00;
+            border: 1px solid #00ff00;
         }
         
         .btn-success:hover {
-            background: #218838;
+            background: #2a7a2a;
         }
         
         .btn-danger {
-            background: #dc3545;
-            color: white;
+            background: #5a1a1a;
+            color: #ff6666;
+            border: 1px solid #ff0000;
         }
         
         .btn-danger:hover {
-            background: #c82333;
+            background: #7a2a2a;
         }
         
         .alert {
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
+            font-size: 14px;
         }
         
         .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: #1a3a1a;
+            color: #00ff00;
+            border: 1px solid #00aa00;
         }
         
         .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: #3a1a1a;
+            color: #ff6666;
+            border: 1px solid #ff0000;
         }
         
         .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
+            background: #1a2a3a;
+            color: #66aaff;
+            border: 1px solid #4488cc;
         }
         
-        /* 多模态样式 */
-        .upload-area {
-            border: 2px dashed #ddd;
-            border-radius: 10px;
-            padding: 40px;
-            text-align: center;
-            margin-bottom: 20px;
-            transition: all 0.3s;
-        }
-        
-        .upload-area:hover {
-            border-color: #667eea;
-            background: #f8f9fa;
-        }
-        
-        .upload-area.dragover {
-            border-color: #667eea;
-            background: #eef;
-        }
-        
-        .upload-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-        
-        .file-input {
-            display: none;
-        }
-        
-        .file-label {
-            display: inline-block;
-            padding: 12px 24px;
-            background: #667eea;
-            color: white;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        
-        .file-label:hover {
-            background: #5568d3;
-        }
-        
-        .preview-container {
-            margin-top: 20px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-        
-        .preview-image {
-            max-width: 100%;
-            max-height: 400px;
-            border-radius: 8px;
-        }
-        
-        .audio-player {
-            width: 100%;
-            margin-top: 10px;
-        }
-        
-        .result-box {
-            margin-top: 20px;
-            padding: 15px;
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-        }
-        
-        .result-box h4 {
-            margin-bottom: 10px;
-            color: #667eea;
-        }
-        
-        .result-box pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        
+        /* 多模态标签 */
         .tab-buttons {
             display: flex;
             gap: 10px;
@@ -619,21 +676,23 @@ HTML_TEMPLATE = """
         
         .tab-btn {
             padding: 10px 20px;
-            background: #f8f9fa;
-            border: 1px solid #ddd;
+            background: #1a1a1a;
+            border: 1px solid #333;
             border-radius: 8px;
+            color: #00aa00;
             cursor: pointer;
             transition: all 0.3s;
+            font-family: inherit;
         }
         
         .tab-btn.active {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
+            background: #1a3a1a;
+            color: #00ff00;
+            border-color: #00aa00;
         }
         
         .tab-btn:hover:not(.active) {
-            background: #e9ecef;
+            background: #2a2a2a;
         }
         
         .tab-content {
@@ -644,12 +703,108 @@ HTML_TEMPLATE = """
             display: block;
         }
         
+        /* 上传区域 */
+        .upload-area {
+            border: 2px dashed #333;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        
+        .upload-area:hover {
+            border-color: #00ff00;
+            background: #1a1a1a;
+        }
+        
+        .upload-area.dragover {
+            border-color: #00ff00;
+            background: #1a3a1a;
+        }
+        
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        .preview-container {
+            margin-top: 20px;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        
+        .preview-image {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 8px;
+            border: 1px solid #00aa00;
+        }
+        
+        .audio-player {
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        .result-box {
+            margin-top: 20px;
+            padding: 15px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+        }
+        
+        .result-box h4 {
+            margin-bottom: 10px;
+            color: #00ff00;
+        }
+        
+        .result-box pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: #0a0a0a;
+            padding: 10px;
+            border-radius: 5px;
+            color: #00cc00;
+        }
+        
+        /* 统计卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+        
+        .stat-card h3 {
+            font-size: 2em;
+            color: #00ff00;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card p {
+            color: #00aa00;
+            font-size: 14px;
+        }
+        
+        /* 加载动画 */
         .loading {
             display: inline-block;
             width: 20px;
             height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
+            border: 3px solid #333;
+            border-top: 3px solid #00ff00;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -659,90 +814,94 @@ HTML_TEMPLATE = """
             100% { transform: rotate(360deg); }
         }
         
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
+        /* 滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
         }
         
-        .stat-card {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
+        ::-webkit-scrollbar-track {
+            background: #0a0a0a;
         }
         
-        .stat-card h3 {
-            font-size: 2em;
-            color: #667eea;
-            margin-bottom: 5px;
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
         }
         
-        .stat-card p {
-            color: #666;
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00aa00;
         }
     </style>
 </head>
 <body>
+    <header>
+        <a href="#" class="logo">pandaco.asia</a>
+        <div class="header-status">● Online</div>
+    </header>
+    
+    <div class="nav-tabs">
+        <button class="nav-tab active" onclick="switchTab('chat')">💬 Chat</button>
+        <button class="nav-tab" onclick="switchTab('multimodal')">🖼️ Multimodal</button>
+        <button class="nav-tab" onclick="switchTab('config')">⚙️ Settings</button>
+    </div>
+    
     <div class="container">
-        <header>
-            <h1>🤖 OpenTalon</h1>
-            <p>Markdown 驱动的本地化自主智能体 - 多模态版</p>
-        </header>
-        
-        <div class="nav-tabs">
-            <button class="nav-tab active" onclick="switchTab('chat')">💬 聊天</button>
-            <button class="nav-tab" onclick="switchTab('multimodal')">🖼️ 多模态</button>
-            <button class="nav-tab" onclick="switchTab('config')">⚙️ 配置</button>
-        </div>
-        
         <!-- 聊天界面 -->
         <div id="chat-tab" class="chat-container">
             <div class="chat-messages" id="chat-messages">
                 <div class="message assistant">
-                    👋 你好！我是 OpenTalon，你的 AI 助手。有什么可以帮你的吗？
+                    👋 Hello! I'm your AI assistant. How can I help you today?
                 </div>
             </div>
-            <div class="chat-input">
-                <input type="text" id="chat-input" placeholder="输入消息..." onkeypress="if(event.key==='Enter')sendMessage()">
-                <button id="send-btn" onclick="sendMessage()">发送</button>
+            
+            <div class="chat-input-area">
+                <div class="image-preview-container" id="image-preview-container">
+                    <img id="image-preview" class="image-preview" src="">
+                    <button class="remove-image" onclick="removeImage()">✕ Remove</button>
+                </div>
+                
+                <div class="chat-input-wrapper">
+                    <input type="file" id="chat-image-input" class="file-input" accept="image/*" onchange="handleChatImage(this.files[0])">
+                    <button class="upload-btn" onclick="document.getElementById('chat-image-input').click()" title="Upload Image">📷</button>
+                    <input type="text" id="chat-input" class="chat-input" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMessage()">
+                    <button id="send-btn" class="send-btn" onclick="sendMessage()">Send</button>
+                </div>
             </div>
         </div>
         
         <!-- 多模态界面 -->
-        <div id="multimodal-tab" class="multimodal-container">
+        <div id="multimodal-tab" class="multimodal-container hidden">
             <div class="config-form">
                 <div class="tab-buttons">
-                    <button class="tab-btn active" onclick="switchMultimodalTab('image')">🖼️ 图片识别</button>
-                    <button class="tab-btn" onclick="switchMultimodalTab('audio')">🎤 音频识别</button>
-                    <button class="tab-btn" onclick="switchMultimodalTab('stats')">📊 统计</button>
+                    <button class="tab-btn active" onclick="switchMultimodalTab('image')">🖼️ Image</button>
+                    <button class="tab-btn" onclick="switchMultimodalTab('audio')">🎤 Audio</button>
+                    <button class="tab-btn" onclick="switchMultimodalTab('stats')">📊 Stats</button>
                 </div>
                 
                 <!-- 图片识别 -->
                 <div id="image-tab" class="tab-content active">
                     <div class="alert alert-info">
-                        💡 上传图片，让 AI 帮你识别和分析。支持格式：JPG, PNG, GIF, WebP
+                        💡 Upload an image for AI analysis. Supported: JPG, PNG, GIF, WebP
                     </div>
                     
                     <div class="upload-area" id="image-drop-zone" onclick="document.getElementById('image-input').click()">
                         <div class="upload-icon">🖼️</div>
-                        <p>点击或拖拽上传图片</p>
+                        <p>Click or drag to upload image</p>
                         <input type="file" id="image-input" class="file-input" accept="image/*" onchange="handleImageUpload(this.files[0])">
                     </div>
                     
                     <div class="form-group">
-                        <label>识别提示词</label>
-                        <input type="text" id="image-prompt" value="请详细描述这张图片" placeholder="你想让 AI 分析什么？">
+                        <label>Prompt</label>
+                        <input type="text" id="image-prompt" value="Please describe this image in detail" placeholder="What do you want to know?">
                     </div>
                     
-                    <div id="image-preview" class="preview-container" style="display:none;">
-                        <h4>预览</h4>
+                    <div id="image-preview-box" class="preview-container" style="display:none;">
+                        <h4>Preview</h4>
                         <img id="image-preview-img" class="preview-image" src="">
                     </div>
                     
                     <div id="image-result" class="result-box" style="display:none;">
-                        <h4>识别结果</h4>
+                        <h4>Analysis Result</h4>
                         <pre id="image-result-text"></pre>
                     </div>
                 </div>
@@ -750,32 +909,32 @@ HTML_TEMPLATE = """
                 <!-- 音频识别 -->
                 <div id="audio-tab" class="tab-content">
                     <div class="alert alert-info">
-                        💡 上传音频，AI 会转录文字并回应。支持格式：MP3, WAV, OGG, M4A
-                        <br><small>⚠️ 注意：语音识别需要 OpenAI API</small>
+                        💡 Upload audio for transcription. Supported: MP3, WAV, OGG, M4A
+                        <br><small>⚠️ Requires OpenAI API for speech recognition</small>
                     </div>
                     
                     <div class="upload-area" id="audio-drop-zone" onclick="document.getElementById('audio-input').click()">
                         <div class="upload-icon">🎤</div>
-                        <p>点击或拖拽上传音频</p>
+                        <p>Click or drag to upload audio</p>
                         <input type="file" id="audio-input" class="file-input" accept="audio/*" onchange="handleAudioUpload(this.files[0])">
                     </div>
                     
                     <div class="form-group">
-                        <label>额外提示（可选）</label>
-                        <input type="text" id="audio-prompt" placeholder="你想让 AI 如何回应？">
+                        <label>Additional Prompt (optional)</label>
+                        <input type="text" id="audio-prompt" placeholder="How should AI respond?">
                     </div>
                     
-                    <div id="audio-preview" class="preview-container" style="display:none;">
-                        <h4>预览</h4>
+                    <div id="audio-preview-box" class="preview-container" style="display:none;">
+                        <h4>Preview</h4>
                         <audio id="audio-preview-player" class="audio-player" controls>
                             <source src="" type="audio/mpeg">
                         </audio>
                     </div>
                     
                     <div id="audio-result" class="result-box" style="display:none;">
-                        <h4>转录文字</h4>
+                        <h4>Transcription</h4>
                         <pre id="audio-transcription"></pre>
-                        <h4 style="margin-top:15px;">AI 回应</h4>
+                        <h4 style="margin-top:15px;">AI Response</h4>
                         <pre id="audio-response"></pre>
                     </div>
                 </div>
@@ -785,45 +944,45 @@ HTML_TEMPLATE = """
                     <div class="stats-grid" id="stats-grid">
                         <div class="stat-card">
                             <h3>-</h3>
-                            <p>上传图片</p>
+                            <p>Images</p>
                         </div>
                         <div class="stat-card">
                             <h3>-</h3>
-                            <p>上传音频</p>
+                            <p>Audios</p>
                         </div>
                         <div class="stat-card">
                             <h3>-</h3>
-                            <p>总大小</p>
+                            <p>Total Size</p>
                         </div>
                     </div>
                     
-                    <button class="btn btn-danger" onclick="cleanupFiles()">🗑️ 清理 7 天前的文件</button>
+                    <button class="btn btn-danger" onclick="cleanupFiles()">🗑️ Cleanup files older than 7 days</button>
                 </div>
             </div>
         </div>
         
         <!-- 配置界面 -->
-        <div id="config-tab" class="config-container">
+        <div id="config-tab" class="config-container hidden">
             <div class="config-form">
                 <div id="config-alert"></div>
                 
                 <div class="form-group">
-                    <label>提供商</label>
+                    <label>Provider</label>
                     <select id="config-provider" onchange="updateProviderDefaults()">
                         <option value="moonshot">Kimi (月之暗面)</option>
                         <option value="dashscope">Qwen (通义千问)</option>
                         <option value="deepseek">DeepSeek</option>
                         <option value="openai">OpenAI</option>
-                        <option value="zhipu">智谱 AI</option>
-                        <option value="baichuan">百川 AI</option>
-                        <option value="custom">自定义</option>
+                        <option value="zhipu">Zhipu AI</option>
+                        <option value="baichuan">Baichuan AI</option>
+                        <option value="custom">Custom</option>
                     </select>
                 </div>
                 
                 <div class="form-group">
                     <label>API Key</label>
                     <input type="password" id="config-api-key" placeholder="sk-...">
-                    <small>你的 API Key 只保存在本地</small>
+                    <small>Your API key is stored locally only</small>
                 </div>
                 
                 <div class="form-group">
@@ -832,8 +991,8 @@ HTML_TEMPLATE = """
                 </div>
                 
                 <div class="form-group">
-                    <label>模型</label>
-                    <input type="text" id="config-model" placeholder="模型名称">
+                    <label>Model</label>
+                    <input type="text" id="config-model" placeholder="Model name">
                 </div>
                 
                 <div class="form-group">
@@ -846,23 +1005,23 @@ HTML_TEMPLATE = """
                     <input type="number" id="config-max-tokens" value="4096">
                 </div>
                 
-                <button class="btn btn-primary" onclick="testConfig()">🔍 测试连接</button>
-                <button class="btn btn-success" onclick="saveConfig()">💾 保存配置</button>
+                <button class="btn btn-primary" onclick="testConfig()">🔍 Test Connection</button>
+                <button class="btn btn-success" onclick="saveConfig()">💾 Save Configuration</button>
             </div>
         </div>
     </div>
     
     <script>
+        let currentImageBase64 = null;
+        
         // 切换主标签
         function switchTab(tab) {
             document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.chat-container, .multimodal-container, .config-container').forEach(c => {
-                c.classList.remove('active');
                 c.classList.add('hidden');
             });
             
             event.target.classList.add('active');
-            document.getElementById(tab + '-tab').classList.add('active');
             document.getElementById(tab + '-tab').classList.remove('hidden');
             
             if (tab === 'multimodal') {
@@ -879,18 +1038,51 @@ HTML_TEMPLATE = """
             document.getElementById(tab + '-tab').classList.add('active');
         }
         
+        // 处理聊天中的图片
+        function handleChatImage(file) {
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentImageBase64 = e.target.result;
+                document.getElementById('image-preview').src = currentImageBase64;
+                document.getElementById('image-preview-container').style.display = 'flex';
+                document.getElementById('image-preview-container').style.alignItems = 'center';
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        // 移除图片
+        function removeImage() {
+            currentImageBase64 = null;
+            document.getElementById('chat-image-input').value = '';
+            document.getElementById('image-preview-container').style.display = 'none';
+        }
+        
         // 发送消息
         async function sendMessage() {
             const input = document.getElementById('chat-input');
             const message = input.value.trim();
-            if (!message) return;
-            
-            const messagesDiv = document.getElementById('chat-messages');
             const sendBtn = document.getElementById('send-btn');
             
+            if (!message && !currentImageBase64) return;
+            
+            const messagesDiv = document.getElementById('chat-messages');
+            
+            // 构建用户消息 HTML
+            let userHtml = '';
+            if (message) {
+                userHtml += `<div>${escapeHtml(message)}</div>`;
+            }
+            if (currentImageBase64) {
+                userHtml += `<img src="${currentImageBase64}" class="message-image">`;
+            }
+            
             // 添加用户消息
-            messagesDiv.innerHTML += `<div class="message user">${escapeHtml(message)}</div>`;
+            messagesDiv.innerHTML += `<div class="message user">${userHtml}</div>`;
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            // 清空输入
             input.value = '';
             sendBtn.disabled = true;
             
@@ -899,7 +1091,10 @@ HTML_TEMPLATE = """
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: message})
+                    body: JSON.stringify({
+                        message: message,
+                        image: currentImageBase64
+                    })
                 });
                 
                 const data = await response.json();
@@ -907,7 +1102,7 @@ HTML_TEMPLATE = """
                 if (data.success) {
                     messagesDiv.innerHTML += `<div class="message assistant">${escapeHtml(data.response)}</div>`;
                 } else {
-                    messagesDiv.innerHTML += `<div class="message error">❌ ${escapeHtml(data.error || '请求失败')}</div>`;
+                    messagesDiv.innerHTML += `<div class="message error">❌ ${escapeHtml(data.error || 'Request failed')}</div>`;
                 }
             } catch (error) {
                 messagesDiv.innerHTML += `<div class="message error">❌ ${escapeHtml(error.message)}</div>`;
@@ -915,13 +1110,14 @@ HTML_TEMPLATE = """
             
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
             sendBtn.disabled = false;
+            removeImage();
         }
         
-        // 处理图片上传
+        // 处理图片上传（多模态标签）
         async function handleImageUpload(file) {
             if (!file) return;
             
-            const preview = document.getElementById('image-preview');
+            const preview = document.getElementById('image-preview-box');
             const previewImg = document.getElementById('image-preview-img');
             const resultBox = document.getElementById('image-result');
             const resultText = document.getElementById('image-result-text');
@@ -940,7 +1136,7 @@ HTML_TEMPLATE = """
             formData.append('prompt', document.getElementById('image-prompt').value);
             
             resultBox.style.display = 'block';
-            resultText.innerHTML = '<span class="loading"></span> 正在识别...';
+            resultText.innerHTML = '<span class="loading"></span> Analyzing...';
             
             try {
                 const response = await fetch('/api/upload/image', {
@@ -953,7 +1149,7 @@ HTML_TEMPLATE = """
                 if (data.success) {
                     resultText.textContent = data.result;
                 } else {
-                    resultText.textContent = '❌ ' + (data.error || '识别失败');
+                    resultText.textContent = '❌ ' + (data.error || 'Analysis failed');
                 }
             } catch (error) {
                 resultText.textContent = '❌ ' + error.message;
@@ -964,7 +1160,7 @@ HTML_TEMPLATE = """
         async function handleAudioUpload(file) {
             if (!file) return;
             
-            const preview = document.getElementById('audio-preview');
+            const preview = document.getElementById('audio-preview-box');
             const previewPlayer = document.getElementById('audio-preview-player');
             const resultBox = document.getElementById('audio-result');
             const transcription = document.getElementById('audio-transcription');
@@ -981,7 +1177,7 @@ HTML_TEMPLATE = """
             formData.append('prompt', document.getElementById('audio-prompt').value);
             
             resultBox.style.display = 'block';
-            transcription.innerHTML = '<span class="loading"></span> 正在转录...';
+            transcription.innerHTML = '<span class="loading"></span> Transcribing...';
             response.innerHTML = '';
             
             try {
@@ -993,10 +1189,10 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 
                 if (data.success) {
-                    transcription.textContent = data.transcription || '无';
-                    response.textContent = data.response || '无';
+                    transcription.textContent = data.transcription || 'None';
+                    response.textContent = data.response || 'None';
                 } else {
-                    transcription.textContent = '❌ ' + (data.error || '处理失败');
+                    transcription.textContent = '❌ ' + (data.error || 'Processing failed');
                     response.textContent = '';
                 }
             } catch (error) {
@@ -1016,26 +1212,26 @@ HTML_TEMPLATE = """
                     document.getElementById('stats-grid').innerHTML = `
                         <div class="stat-card">
                             <h3>${stats.images}</h3>
-                            <p>上传图片</p>
+                            <p>Images</p>
                         </div>
                         <div class="stat-card">
                             <h3>${stats.audio}</h3>
-                            <p>上传音频</p>
+                            <p>Audios</p>
                         </div>
                         <div class="stat-card">
                             <h3>${(stats.total_size / 1024 / 1024).toFixed(2)} MB</h3>
-                            <p>总大小</p>
+                            <p>Total Size</p>
                         </div>
                     `;
                 }
             } catch (error) {
-                console.error('加载统计失败:', error);
+                console.error('Failed to load stats:', error);
             }
         }
         
         // 清理文件
         async function cleanupFiles() {
-            if (!confirm('确定要清理 7 天前的文件吗？')) return;
+            if (!confirm('Are you sure you want to delete files older than 7 days?')) return;
             
             try {
                 const response = await fetch('/api/cleanup', {
@@ -1046,11 +1242,11 @@ HTML_TEMPLATE = """
                 
                 const data = await response.json();
                 if (data.success) {
-                    alert(`已清理 ${data.cleaned} 个文件`);
+                    alert(`Cleaned ${data.cleaned} files`);
                     loadStats();
                 }
             } catch (error) {
-                alert('清理失败：' + error.message);
+                alert('Cleanup failed: ' + error.message);
             }
         }
         
@@ -1081,7 +1277,7 @@ HTML_TEMPLATE = """
             if (!config) return;
             
             const alertDiv = document.getElementById('config-alert');
-            alertDiv.innerHTML = '<div class="alert alert-info">🔍 正在测试连接...</div>';
+            alertDiv.innerHTML = '<div class="alert alert-info">🔍 Testing connection...</div>';
             
             try {
                 const response = await fetch('/api/config/test', {
@@ -1093,7 +1289,7 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 
                 if (data.success) {
-                    alertDiv.innerHTML = `<div class="alert alert-success">✅ ${data.message} (模型：${data.model})</div>`;
+                    alertDiv.innerHTML = `<div class="alert alert-success">✅ ${data.message} (Model: ${data.model})</div>`;
                 } else {
                     alertDiv.innerHTML = `<div class="alert alert-error">❌ ${data.message}</div>`;
                 }
@@ -1108,7 +1304,7 @@ HTML_TEMPLATE = """
             if (!config) return;
             
             const alertDiv = document.getElementById('config-alert');
-            alertDiv.innerHTML = '<div class="alert alert-info">💾 正在保存...</div>';
+            alertDiv.innerHTML = '<div class="alert alert-info">💾 Saving...</div>';
             
             try {
                 const response = await fetch('/api/config', {
@@ -1133,7 +1329,7 @@ HTML_TEMPLATE = """
         function getConfig() {
             const apiKey = document.getElementById('config-api-key').value.trim();
             if (!apiKey) {
-                alert('API Key 不能为空');
+                alert('API Key is required');
                 return null;
             }
             
@@ -1197,7 +1393,7 @@ HTML_TEMPLATE = """
                     document.getElementById('config-max-tokens').value = data.config.max_tokens || 4096;
                 }
             } catch (error) {
-                console.error('加载配置失败:', error);
+                console.error('Failed to load config:', error);
             }
         };
     </script>
@@ -1229,16 +1425,16 @@ if __name__ == '__main__':
     print(f"""
 ╔═══════════════════════════════════════╗
 ║     OpenTalon Web Server              ║
-║     多模态增强版 (图片 + 音频)          ║
+║     Black Theme Edition               ║
 ╚═══════════════════════════════════════╝
 
-🌐 访问地址:
-   本地：http://localhost:{args.port}
-   局域网：http://{args.host}:{args.port}
+🌐 Access:
+   Local: http://localhost:{args.port}
+   LAN: http://{args.host}:{args.port}
 
-📁 上传目录：{Path.home() / '.opentalon' / 'uploads'}
+📁 Upload Dir: {Path.home() / '.opentalon' / 'uploads'}
 
-🚀 启动服务...
+🚀 Starting server...
 """)
     
     app.run(host=args.host, port=args.port, debug=args.debug)
