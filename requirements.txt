@@ -7,6 +7,10 @@ flask-cors>=4.0.0
 # HTTP 请求
 requests>=2.31.0
 
+# 文件处理
+python-magic>=0.4.27  # 文件类型检测
+
 # 可选依赖
 # python-dotenv>=1.0.0  # 环境变量支持
 # watchdog>=3.0.0       # 文件监控
+# pillow>=10.0.0        # 图片处理（可选）
