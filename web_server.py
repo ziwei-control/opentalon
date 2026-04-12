@@ -410,10 +410,6 @@ HTML_TEMPLATE = """
             flex-direction: column;
         }
         
-        .config-container, .multimodal-container {
-            display: none;
-        }
-        
         .chat-container.hidden, .config-container.hidden, .multimodal-container.hidden {
             display: none;
         }
