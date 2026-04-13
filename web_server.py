@@ -33,7 +33,7 @@ from core.multimodal import (
 )
 
 # 导入搜索模块
-from core.search import search_web, search_news, fetch_webpage_content
+from core.search import search_web, search_news, fetch_webpage_content, get_realtime_context
 
 app = Flask(__name__)
 CORS(app)
@@ -141,7 +141,7 @@ def test_config():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """文字聊天（支持带图片和联网搜索）"""
+    """文字聊天（支持带图片和实时联网搜索）"""
     data = request.json
     if not data:
         return jsonify({'success': False, 'error': '消息不能为空'})
@@ -157,42 +157,53 @@ def chat():
     base_url = config.get('base_url', 'https://api.openai.com/v1')
     model = config.get('model', 'gpt-3.5-turbo')
     
-    # 检测是否需要联网搜索
-    search_keywords = ['新闻', 'news', '最新', 'latest', '今天', 'today', '当前', 'current', 
-                       '版本', 'version', '实时', 'real-time', '搜索', 'search',
-                       '天气', 'weather', '股票', 'stock', '价格', 'price', '汇率', 'rate']
+    # 智能检测是否需要联网搜索
+    search_keywords = [
+        # 时间相关
+        '今天', 'today', '现在', 'now', '当前', 'current', '最新', 'latest',
+        '刚刚', 'just', '最近', 'recent', '实时', 'real-time',
+        # 新闻热点
+        '新闻', 'news', '热点', 'hot', '头条', 'headline', '事件', 'event',
+        # 版本信息
+        '版本', 'version', '更新', 'update', '发布', 'release',
+        # 天气
+        '天气', 'weather', '气温', 'temperature', '下雨', 'rain', '晴天', 'sunny',
+        # 金融
+        '股票', 'stock', '价格', 'price', '汇率', 'rate', '币价', 'crypto',
+        '比特币', 'bitcoin', 'BTC', '以太坊', 'ethereum', 'ETH',
+        # 搜索意图
+        '搜索', 'search', '查找', 'find', '查询', 'query', '了解', 'learn',
+        # 体育
+        '比赛', 'match', '比分', 'score', '球队', 'team',
+        # 其他实时信息
+        '疫情', 'pandemic', '选举', 'election', '战争', 'war'
+    ]
     
-    need_search = any(kw in message.lower() for kw in search_keywords) and not image_data
+    # 检测是否需要搜索
+    need_search = any(kw in message.lower() or kw in message for kw in search_keywords) and not image_data
     
     # 调试日志
-    print(f"\n🔍 检测搜索 - 消息：{message[:50]}...")
-    print(f"🔍 需要搜索：{need_search}")
+    print(f"\n💬 用户消息：{message[:100]}...")
+    print(f"🔍 检测关键词：{need_search}")
     
-    # 如果需要搜索，先获取实时信息
+    # 如果需要搜索，获取实时信息
     search_context = ""
+    search_status = "disabled"
     if need_search:
         try:
-            print("🌐 开始搜索...")
-            # 搜索网页
-            web_results = search_web(message, num_results=5)
-            print(f"🌐 搜索结果：{web_results}")
-            if web_results and 'error' not in web_results[0]:
-                search_context = "\n\n📊 实时搜索结果：\n"
-                for i, r in enumerate(web_results[:3], 1):
-                    if 'title' in r and 'url' in r:
-                        search_context += f"{i}. {r['title']} - {r['url']}\n"
-                
-                # 如果是新闻相关，再搜索新闻
-                if any(kw in message for kw in ['新闻', 'news', '今天', 'today', '最新']):
-                    news_results = search_news(message, num_results=3)
-                    if news_results and 'error' not in news_results[0]:
-                        search_context += "\n📰 最新新闻：\n"
-                        for n in news_results[:3]:
-                            if 'title' in n and 'url' in n:
-                                search_context += f"• {n['title']}\n"
+            print("🌐 开始实时搜索...")
+            search_status = "searching"
+            
+            # 获取实时上下文
+            search_context = get_realtime_context(message, max_results=5)
+            
+            print(f"✅ 搜索完成，获取到上下文信息")
+            search_status = "completed"
+            
         except Exception as e:
             print(f"❌ 搜索错误：{e}")
             search_context = f"\n\n⚠️ 搜索暂时不可用：{str(e)}"
+            search_status = "error"
     
     # 构建消息（带搜索上下文）
     if image_data:
@@ -225,7 +236,7 @@ def chat():
                 response.raise_for_status()
                 result = response.json()
                 content = result['output']['choices'][0]['message']['content']
-                return jsonify({'success': True, 'response': content})
+                return jsonify({'success': True, 'response': content, 'search_status': 'disabled'})
             except Exception as e:
                 return jsonify({'success': False, 'error': f'请求失败：{str(e)}'})
         else:
@@ -246,10 +257,16 @@ def chat():
     else:
         # 纯文字（带搜索上下文）
         if search_context:
-            messages = [{
-                'role': 'user',
-                'content': f"{message}{search_context}\n\n请根据以上实时信息回答用户的问题。"
-            }]
+            system_prompt = """你是一个智能助手，可以访问实时互联网信息。
+请根据提供的实时搜索结果回答用户的问题。
+如果搜索结果中有相关信息，请优先引用并标注来源。
+如果搜索结果不足，请基于你的知识回答，并说明哪些是实时信息，哪些是你的知识。
+回答要准确、简洁、有帮助。"""
+            
+            messages = [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': f"{message}{search_context}\n\n请根据以上实时信息回答用户的问题。"}
+            ]
         else:
             messages = [{'role': 'user', 'content': message}]
     
@@ -272,7 +289,12 @@ def chat():
             response.raise_for_status()
             data = response.json()
             result = data['choices'][0]['message']['content']
-            return jsonify({'success': True, 'response': result})
+            return jsonify({
+                'success': True, 
+                'response': result,
+                'search_status': search_status,
+                'has_search': need_search
+            })
         except Exception as e:
             return jsonify({'success': False, 'error': f'请求失败：{str(e)}'})
 
@@ -1159,6 +1181,11 @@ HTML_TEMPLATE = """
             input.value = '';
             sendBtn.disabled = true;
             
+            // 显示搜索状态
+            const searchStatusId = 'search-status-' + Date.now();
+            messagesDiv.innerHTML += `<div id="${searchStatusId}" class="message assistant" style="color:#00aa00;font-size:12px;">🔍 正在搜索实时信息...</div>`;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
             // 发送请求
             try {
                 const response = await fetch('/api/chat', {
@@ -1172,18 +1199,50 @@ HTML_TEMPLATE = """
                 
                 const data = await response.json();
                 
+                // 移除搜索状态
+                const searchStatusEl = document.getElementById(searchStatusId);
+                if (searchStatusEl) {
+                    searchStatusEl.remove();
+                }
+                
                 if (data.success) {
-                    messagesDiv.innerHTML += `<div class="message assistant">${escapeHtml(data.response)}</div>`;
+                    // 如果有搜索，添加搜索指示器
+                    let responseHtml = '';
+                    if (data.has_search && data.search_status === 'completed') {
+                        responseHtml += `<div style="font-size:11px;color:#00aa00;margin-bottom:8px;">✅ 已获取实时网络信息</div>`;
+                    }
+                    responseHtml += `<div>${formatResponse(data.response)}</div>`;
+                    messagesDiv.innerHTML += `<div class="message assistant">${responseHtml}</div>`;
                 } else {
                     messagesDiv.innerHTML += `<div class="message error">❌ ${escapeHtml(data.error || 'Request failed')}</div>`;
                 }
             } catch (error) {
+                const searchStatusEl = document.getElementById(searchStatusId);
+                if (searchStatusEl) {
+                    searchStatusEl.remove();
+                }
                 messagesDiv.innerHTML += `<div class="message error">❌ ${escapeHtml(error.message)}</div>`;
             }
             
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
             sendBtn.disabled = false;
             removeImage();
+        }
+        
+        // 格式化响应（支持 Markdown 简单渲染）
+        function formatResponse(text) {
+            if (!text) return '';
+            // 转义 HTML
+            let html = escapeHtml(text);
+            // 加粗
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            // 斜体
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            // 链接
+            html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" style="color:#00ff00;text-decoration:underline;">$1</a>');
+            // 换行
+            html = html.replace(/\n/g, '<br>');
+            return html;
         }
         
         // 处理图片上传（多模态标签）

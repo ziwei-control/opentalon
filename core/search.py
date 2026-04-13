@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-OpenTalon 联网搜索模块
+OpenTalon 实时联网搜索模块
 支持：
 - DuckDuckGo 搜索（免费，无需 API Key）
 - 新闻获取
 - 网页内容抓取
+- 实时数据整合
 """
 
 import requests
-from typing import List, Dict
+from typing import List, Dict, Optional
 import re
 from html import unescape
+from datetime import datetime
 
 
 def search_web(query: str, num_results: int = 5) -> List[Dict]:
@@ -43,7 +45,6 @@ def search_web(query: str, num_results: int = 5) -> List[Dict]:
         html = response.text
         
         # 解析搜索结果 - DuckDuckGo Lite 格式
-        # 查找结果链接
         link_pattern = r'<a class="result-link" href="([^"]+)">([^<]+)</a>'
         matches = re.findall(link_pattern, html)
         
@@ -64,15 +65,16 @@ def search_web(query: str, num_results: int = 5) -> List[Dict]:
             results.append({
                 'title': unescape(title.strip()),
                 'url': url,
-                'snippet': ''
+                'snippet': '',
+                'timestamp': datetime.now().isoformat()
             })
         
         if not results:
-            # 如果还是没结果，返回一个友好的提示
             return [{
                 'title': '搜索完成',
                 'url': '',
-                'snippet': f'未找到关于 "{query}" 的具体结果，但 AI 助手会尽力回答您的问题。'
+                'snippet': f'未找到关于 "{query}" 的具体结果，但 AI 助手会尽力回答您的问题。',
+                'timestamp': datetime.now().isoformat()
             }]
         
         return results
@@ -82,7 +84,8 @@ def search_web(query: str, num_results: int = 5) -> List[Dict]:
         return [{
             'title': '搜索暂时不可用',
             'url': '',
-            'snippet': f'搜索服务暂时无法使用：{str(e)}。但 AI 助手仍会尽力回答您的问题。'
+            'snippet': f'搜索服务暂时无法使用：{str(e)}。但 AI 助手仍会尽力回答您的问题。',
+            'timestamp': datetime.now().isoformat()
         }]
 
 
@@ -102,6 +105,65 @@ def search_news(query: str = '今日新闻', num_results: int = 5) -> List[Dict]
 
 
 def fetch_webpage_content(url: str) -> str:
+    """
+    抓取网页内容
+    
+    Args:
+        url: 网页 URL
+    
+    Returns:
+        网页文本内容
+    """
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # 提取文本内容
+        html = response.text
+        # 清理 HTML 标签
+        text = re.sub(r'<[^>]+>', ' ', html)
+        text = unescape(text)
+        # 清理多余空白
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text[:2000]  # 限制长度
+        
+    except Exception as e:
+        return f'抓取失败：{str(e)}'
+
+
+def get_realtime_context(query: str, max_results: int = 3) -> str:
+    """
+    获取实时上下文信息
+    
+    Args:
+        query: 查询关键词
+        max_results: 最大结果数
+    
+    Returns:
+        格式化的实时信息字符串
+    """
+    context_parts = []
+    
+    # 添加时间戳
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    context_parts.append(f" 当前时间：{current_time}")
+    
+    # 执行搜索
+    results = search_web(query, num_results=max_results)
+    
+    if results and 'error' not in results[0].get('title', ''):
+        context_parts.append("\n\n📊 实时搜索结果：")
+        for i, r in enumerate(results, 1):
+            if 'title' in r and 'url' in r:
+                context_parts.append(f"\n{i}. {r['title']}")
+                if r.get('url'):
+                    context_parts.append(f"   来源：{r['url']}")
+    
+    return '\n'.join(context_parts)
     """
     抓取网页内容
     
