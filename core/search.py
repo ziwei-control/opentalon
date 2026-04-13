@@ -174,8 +174,20 @@ def get_realtime_context(query: str, max_results: int = 3) -> str:
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     context_parts.append(f" 当前时间：{current_time}")
     
+    # 优化搜索关键词
+    # 如果查询包含"今日"、"今天"、"最新"等，添加更具体的时间词
+    time_keywords = ['今日', '今天', '最新', '当前', '现在', '实时']
+    has_time_keyword = any(kw in query for kw in time_keywords)
+    
+    # 构建更好的搜索查询
+    search_query = query
+    if has_time_keyword:
+        # 添加日期到搜索查询，提高时效性
+        today_date = datetime.now().strftime('%Y 年%m 月%d 日')
+        search_query = f"{query} {today_date}"
+    
     # 执行搜索
-    results = search_web(query, num_results=max_results)
+    results = search_web(search_query, num_results=max_results)
     
     if results and 'error' not in results[0].get('title', ''):
         context_parts.append("\n\n📊 实时搜索结果：")
@@ -184,6 +196,8 @@ def get_realtime_context(query: str, max_results: int = 3) -> str:
                 context_parts.append(f"\n{i}. {r['title']}")
                 if r.get('url'):
                     context_parts.append(f"   来源：{r['url']}")
+                if r.get('snippet'):
+                    context_parts.append(f"   摘要：{r['snippet'][:100]}")
     
     return '\n'.join(context_parts)
     """
