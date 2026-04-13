@@ -1116,7 +1116,20 @@ HTML_TEMPLATE = """
                 c.classList.add('hidden');
             });
             
-            event.target.classList.add('active');
+            // 安全获取 event.target
+            var target;
+            if (event && event.target) {
+                target = event.target;
+            } else {
+                var buttons = document.querySelectorAll('.nav-tab');
+                for (var i = 0; i < buttons.length; i++) {
+                    if (buttons[i].getAttribute('onclick').indexOf(tab) > -1) {
+                        target = buttons[i];
+                        break;
+                    }
+                }
+            }
+            if (target) target.classList.add('active');
             document.getElementById(tab + '-tab').classList.remove('hidden');
             
             if (tab === 'multimodal') {
@@ -1129,7 +1142,20 @@ HTML_TEMPLATE = """
             document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             
-            event.target.classList.add('active');
+            // 安全获取 event.target
+            var target;
+            if (event && event.target) {
+                target = event.target;
+            } else {
+                var buttons = document.querySelectorAll('.tab-btn');
+                for (var i = 0; i < buttons.length; i++) {
+                    if (buttons[i].getAttribute('onclick').indexOf(tab) > -1) {
+                        target = buttons[i];
+                        break;
+                    }
+                }
+            }
+            if (target) target.classList.add('active');
             document.getElementById(tab + '-tab').classList.add('active');
         }
         
@@ -1233,15 +1259,15 @@ HTML_TEMPLATE = """
         function formatResponse(text) {
             if (!text) return '';
             // 转义 HTML
-            let html = escapeHtml(text);
-            // 加粗
-            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-            // 斜体
-            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-            // 链接
-            html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" style="color:#00ff00;text-decoration:underline;">$1</a>');
+            var html = escapeHtml(text);
+            // 加粗 **text**
+            html = html.replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>');
+            // 斜体 *text*
+            html = html.replace(/\\*(.+?)\\*/g, '<em>$1</em>');
+            // 链接 [text](url)
+            html = html.replace(/\\[(.+?)\\]\\((.+?)\\)/g, '<a href="$2" target="_blank" style="color:#00ff00;text-decoration:underline;">$1</a>');
             // 换行
-            html = html.replace(/\n/g, '<br>');
+            html = html.replace(/\\n/g, '<br>');
             return html;
         }
         
@@ -1482,31 +1508,34 @@ HTML_TEMPLATE = """
             return div.innerHTML;
         }
         
-        // 拖拽上传
-        ['image-drop-zone', 'audio-drop-zone'].forEach(id => {
-            const dropZone = document.getElementById(id);
-            
-            dropZone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropZone.classList.add('dragover');
-            });
-            
-            dropZone.addEventListener('dragleave', () => {
-                dropZone.classList.remove('dragover');
-            });
-            
-            dropZone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropZone.classList.remove('dragover');
+        // 拖拽上传（安全处理）
+        window.addEventListener('DOMContentLoaded', function() {
+            ['image-drop-zone', 'audio-drop-zone'].forEach(id => {
+                const dropZone = document.getElementById(id);
+                if (!dropZone) return;
                 
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    if (id === 'image-drop-zone') {
-                        handleImageUpload(files[0]);
-                    } else {
-                        handleAudioUpload(files[0]);
+                dropZone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('dragover');
+                });
+                
+                dropZone.addEventListener('dragleave', () => {
+                    dropZone.classList.remove('dragover');
+                });
+                
+                dropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('dragover');
+                    
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        if (id === 'image-drop-zone') {
+                            handleImageUpload(files[0]);
+                        } else {
+                            handleAudioUpload(files[0]);
+                        }
                     }
-                }
+                });
             });
         });
         
