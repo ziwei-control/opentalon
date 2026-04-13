@@ -162,11 +162,11 @@ def get_realtime_context(query: str, max_results: int = 3) -> str:
     获取实时上下文信息
     
     Args:
-        query: 查询关键词
+        query: 用户问题
         max_results: 最大结果数
     
     Returns:
-        格式化的实时信息字符串
+        格式化的上下文信息
     """
     context_parts = []
     
@@ -179,6 +179,10 @@ def get_realtime_context(query: str, max_results: int = 3) -> str:
     time_keywords = ['今日', '今天', '最新', '当前', '现在', '实时']
     has_time_keyword = any(kw in query for kw in time_keywords)
     
+    # 天气查询特殊处理
+    weather_keywords = ['天气', '气温', '温度', '下雨', '雪', '风']
+    is_weather_query = any(kw in query for kw in weather_keywords)
+    
     # 构建更好的搜索查询
     search_query = query
     if has_time_keyword:
@@ -186,18 +190,25 @@ def get_realtime_context(query: str, max_results: int = 3) -> str:
         today_date = datetime.now().strftime('%Y 年%m 月%d 日')
         search_query = f"{query} {today_date}"
     
+    if is_weather_query:
+        # 天气查询添加"预报"、"实时"等词
+        search_query = f"{query} 实时预报 温度 气温"
+    
     # 执行搜索
     results = search_web(search_query, num_results=max_results)
     
+    # 格式化结果
     if results and 'error' not in results[0].get('title', ''):
         context_parts.append("\n\n📊 实时搜索结果：")
         for i, r in enumerate(results, 1):
-            if 'title' in r and 'url' in r:
-                context_parts.append(f"\n{i}. {r['title']}")
-                if r.get('url'):
-                    context_parts.append(f"   来源：{r['url']}")
-                if r.get('snippet'):
-                    context_parts.append(f"   摘要：{r['snippet'][:100]}")
+            context_parts.append(f"\n{i}. {r['title']}")
+            if r.get('url'):
+                context_parts.append(f"   来源：{r['url']}")
+            if r.get('snippet'):
+                context_parts.append(f"   摘要：{r['snippet'][:100]}")
+    else:
+        # 如果搜索失败，添加提示
+        context_parts.append("\n\n⚠️ 搜索暂时无法获取实时数据")
     
     return '\n'.join(context_parts)
     """

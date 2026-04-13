@@ -34,6 +34,7 @@ from core.multimodal import (
 
 # 导入搜索模块
 from core.search import search_web, search_news, fetch_webpage_content, get_realtime_context
+from core.weather import get_weather, get_weather_simple
 
 app = Flask(__name__)
 CORS(app)
@@ -186,10 +187,35 @@ def chat():
     print(f"\n💬 用户消息：{message[:100]}...")
     print(f"🔍 检测关键词：{need_search}")
     
+    # 特殊处理天气查询
+    weather_keywords = ['天气', '气温', '温度', '下雨', '雪', '风']
+    is_weather_query = any(kw in message for kw in weather_keywords) and not image_data
+    
     # 如果需要搜索，获取实时信息
     search_context = ""
     search_status = "disabled"
-    if need_search:
+    
+    # 先尝试天气 API（如果是天气查询）
+    if is_weather_query:
+        try:
+            print("🌤️ 尝试获取天气数据...")
+            # 提取城市名（简单处理：移除天气关键词）
+            city = message
+            for kw in weather_keywords:
+                city = city.replace(kw, '')
+            city = city.replace('现在', '').replace('当前', '').replace('实时', '').strip()
+            
+            if city and len(city) <= 10:  # 确保是城市名
+                weather_info = get_weather_simple(city)
+                if weather_info:
+                    search_context = "\n\n🌤️ 实时天气数据：\n" + weather_info
+                    search_status = "completed"
+                    print(f"✅ 天气数据获取成功：{city}")
+        except Exception as e:
+            print(f"⚠️ 天气 API 失败：{e}")
+    
+    # 如果天气 API 失败或不是天气查询，使用搜索
+    if need_search and not search_context:
         try:
             print("🌐 开始实时搜索...")
             search_status = "searching"
