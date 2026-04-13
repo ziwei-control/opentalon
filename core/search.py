@@ -25,55 +25,65 @@ def search_web(query: str, num_results: int = 5) -> List[Dict]:
         搜索结果列表
     """
     try:
-        # DuckDuckGo HTML 搜索
-        url = 'https://html.duckduckgo.com/html/'
+        # DuckDuckGo Lite 搜索
+        url = 'https://lite.duckduckgo.com/lite/'
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://lite.duckduckgo.com/',
+            'Connection': 'keep-alive',
         }
         data = {'q': query}
         
-        response = requests.post(url, headers=headers, data=data, timeout=10)
+        response = requests.post(url, headers=headers, data=data, timeout=10, allow_redirects=True)
         response.raise_for_status()
         
         results = []
         html = response.text
         
-        # 解析搜索结果
-        import re
-        pattern = r'<a class="result__a" href="([^"]+)">([^<]+)</a>'
-        matches = re.findall(pattern, html)
+        # 解析搜索结果 - DuckDuckGo Lite 格式
+        # 查找结果链接
+        link_pattern = r'<a class="result-link" href="([^"]+)">([^<]+)</a>'
+        matches = re.findall(link_pattern, html)
         
-        for i, (url, title) in enumerate(matches[:num_results]):
-            # 清理 URL
-            if url.startswith('//'):
-                url = 'https:' + url
-            
+        if not matches:
+            # 备用模式：查找所有外部链接
+            link_pattern = r'<a rel="nofollow" href="(https?://[^"]+)" class="result-link">([^<]*)</a>'
+            matches = re.findall(link_pattern, html)
+        
+        if not matches:
+            # 更通用的模式
+            link_pattern = r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]+)</a>'
+            all_matches = re.findall(link_pattern, html)
+            # 过滤掉 DuckDuckGo 自己的链接
+            matches = [(url, title) for url, title in all_matches 
+                      if 'duckduckgo' not in url.lower() and len(title) > 10][:num_results]
+        
+        for url, title in matches[:num_results]:
             results.append({
-                'title': unescape(title),
+                'title': unescape(title.strip()),
                 'url': url,
-                'snippet': get_snippet(html, title)
+                'snippet': ''
             })
         
-        return results if results else [{'error': '未找到搜索结果'}]
+        if not results:
+            # 如果还是没结果，返回一个友好的提示
+            return [{
+                'title': '搜索完成',
+                'url': '',
+                'snippet': f'未找到关于 "{query}" 的具体结果，但 AI 助手会尽力回答您的问题。'
+            }]
+        
+        return results
         
     except Exception as e:
-        return [{'error': f'搜索失败：{str(e)}'}]
-
-
-def get_snippet(html: str, title: str) -> str:
-    """从 HTML 中提取摘要"""
-    try:
-        # 简单实现，返回标题附近的文本
-        idx = html.find(title)
-        if idx > 0:
-            snippet = html[max(0, idx-100):idx+200]
-            # 清理 HTML 标签
-            snippet = re.sub(r'<[^>]+>', ' ', snippet)
-            snippet = unescape(snippet).strip()
-            return snippet[:150] + '...' if len(snippet) > 150 else snippet
-    except:
-        pass
-    return ''
+        print(f"搜索错误：{e}")
+        return [{
+            'title': '搜索暂时不可用',
+            'url': '',
+            'snippet': f'搜索服务暂时无法使用：{str(e)}。但 AI 助手仍会尽力回答您的问题。'
+        }]
 
 
 def search_news(query: str = '今日新闻', num_results: int = 5) -> List[Dict]:
@@ -87,38 +97,8 @@ def search_news(query: str = '今日新闻', num_results: int = 5) -> List[Dict]
     Returns:
         新闻列表
     """
-    try:
-        # 使用 DuckDuckGo 搜索新闻
-        url = 'https://html.duckduckgo.com/html/'
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        data = {'q': f'news {query}'}
-        
-        response = requests.post(url, headers=headers, data=data, timeout=10)
-        response.raise_for_status()
-        
-        results = []
-        html = response.text
-        
-        # 解析新闻结果
-        pattern = r'<a class="result__a" href="([^"]+)">([^<]+)</a>'
-        matches = re.findall(pattern, html)
-        
-        for url, title in matches[:num_results]:
-            if url.startswith('//'):
-                url = 'https:' + url
-            
-            results.append({
-                'title': unescape(title),
-                'url': url,
-                'source': 'News'
-            })
-        
-        return results if results else [{'error': '未找到新闻'}]
-        
-    except Exception as e:
-        return [{'error': f'新闻搜索失败：{str(e)}'}]
+    # 使用普通搜索，但添加 news 关键词
+    return search_web(f"news {query}", num_results)
 
 
 def fetch_webpage_content(url: str) -> str:

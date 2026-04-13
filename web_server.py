@@ -160,12 +160,18 @@ def chat():
     
     need_search = any(kw in message.lower() for kw in search_keywords) and not image_data
     
+    # 调试日志
+    print(f"\n🔍 检测搜索 - 消息：{message[:50]}...")
+    print(f"🔍 需要搜索：{need_search}")
+    
     # 如果需要搜索，先获取实时信息
     search_context = ""
     if need_search:
         try:
+            print("🌐 开始搜索...")
             # 搜索网页
             web_results = search_web(message, num_results=5)
+            print(f"🌐 搜索结果：{web_results}")
             if web_results and 'error' not in web_results[0]:
                 search_context = "\n\n📊 实时搜索结果：\n"
                 for i, r in enumerate(web_results[:3], 1):
@@ -181,6 +187,7 @@ def chat():
                             if 'title' in n and 'url' in n:
                                 search_context += f"• {n['title']}\n"
         except Exception as e:
+            print(f"❌ 搜索错误：{e}")
             search_context = f"\n\n⚠️ 搜索暂时不可用：{str(e)}"
     
     # 构建消息（带搜索上下文）
