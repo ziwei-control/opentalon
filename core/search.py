@@ -13,6 +13,7 @@ from typing import List, Dict, Optional
 import re
 from html import unescape
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 
 def search_web(query: str, num_results: int = 5) -> List[Dict]:
@@ -27,47 +28,68 @@ def search_web(query: str, num_results: int = 5) -> List[Dict]:
         搜索结果列表
     """
     try:
-        # DuckDuckGo Lite 搜索
-        url = 'https://lite.duckduckgo.com/lite/'
+        # 使用 DuckDuckGo HTML 搜索
+        url = 'https://html.duckduckgo.com/html/'
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://lite.duckduckgo.com/',
             'Connection': 'keep-alive',
         }
-        data = {'q': query}
+        data = {'q': query, 'kl': 'zh-cn'}
         
         response = requests.post(url, headers=headers, data=data, timeout=10, allow_redirects=True)
         response.raise_for_status()
         
+        # 使用 BeautifulSoup 解析
+        soup = BeautifulSoup(response.text, 'html.parser')
         results = []
-        html = response.text
         
-        # 解析搜索结果 - DuckDuckGo Lite 格式
-        link_pattern = r'<a class="result-link" href="([^"]+)">([^<]+)</a>'
-        matches = re.findall(link_pattern, html)
+        # 查找所有结果块
+        result_divs = soup.find_all('div', class_='result')
         
-        if not matches:
-            # 备用模式：查找所有外部链接
-            link_pattern = r'<a rel="nofollow" href="(https?://[^"]+)" class="result-link">([^<]*)</a>'
-            matches = re.findall(link_pattern, html)
-        
-        if not matches:
-            # 更通用的模式
-            link_pattern = r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]+)</a>'
-            all_matches = re.findall(link_pattern, html)
-            # 过滤掉 DuckDuckGo 自己的链接
-            matches = [(url, title) for url, title in all_matches 
-                      if 'duckduckgo' not in url.lower() and len(title) > 10][:num_results]
-        
-        for url, title in matches[:num_results]:
+        for div in result_divs[:num_results * 2]:
+            # 提取标题链接
+            title_link = div.find('a', class_='result__a')
+            if not title_link:
+                continue
+            
+            title = title_link.get_text(strip=True)
+            # 跳过太短的标题
+            if len(title) < 20:
+                continue
+            
+            # 提取 URL
+            raw_url = title_link.get('href', '')
+            
+            # DuckDuckGo 使用重定向 URL，需要提取真实 URL
+            if raw_url.startswith('/'):
+                # 从 onclick 属性中提取
+                onclick = title_link.get('onclick', '')
+                import re
+                match = re.search(r"r='(https?://[^']+)'", onclick)
+                if match:
+                    raw_url = match.group(1)
+                else:
+                    continue  # 无法提取 URL，跳过
+            
+            # 提取摘要
+            snippet_elem = div.find('a', class_='result__snippet')
+            snippet = snippet_elem.get_text(strip=True) if snippet_elem else ''
+            
+            # 过滤 DuckDuckGo 自己的链接
+            if 'duckduckgo' in raw_url.lower():
+                continue
+            
             results.append({
-                'title': unescape(title.strip()),
-                'url': url,
-                'snippet': '',
+                'title': title,
+                'url': raw_url,
+                'snippet': snippet,
                 'timestamp': datetime.now().isoformat()
             })
+            
+            if len(results) >= num_results:
+                break
         
         if not results:
             return [{
