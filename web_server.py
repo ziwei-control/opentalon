@@ -256,8 +256,14 @@ def chat():
                     model = 'gpt-4o'
     else:
         # 纯文字（带搜索上下文）
+        # 获取当前时间
+        from datetime import datetime
+        current_time = datetime.now().strftime('%Y 年%m 月%d 日 %H:%M:%S %A')
+        
         if search_context:
-            system_prompt = """你是一个智能助手，可以访问实时互联网信息。
+            system_prompt = f"""你是一个智能助手，可以访问实时互联网信息。
+当前时间是：{current_time}
+
 请根据提供的实时搜索结果回答用户的问题。
 如果搜索结果中有相关信息，请优先引用并标注来源。
 如果搜索结果不足，请基于你的知识回答，并说明哪些是实时信息，哪些是你的知识。
@@ -268,7 +274,17 @@ def chat():
                 {'role': 'user', 'content': f"{message}{search_context}\n\n请根据以上实时信息回答用户的问题。"}
             ]
         else:
-            messages = [{'role': 'user', 'content': message}]
+            # 即使没有搜索，也要告诉 AI 当前时间
+            system_prompt = f"""你是一个智能助手。
+当前时间是：{current_time}
+
+如果用户询问日期、时间、星期等问题，请直接根据上述时间信息回答。
+回答要准确、简洁、有帮助。"""
+            
+            messages = [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': message}
+            ]
     
     # 调用 LLM
     if not image_data or 'dashscope' not in base_url:
