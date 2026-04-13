@@ -93,9 +93,7 @@ def get_config():
     """获取当前配置"""
     config = load_llm_config()
     if config:
-        # 隐藏敏感信息
-        if 'api_key' in config:
-            config['api_key'] = config['api_key'][:8] + '...' if len(config['api_key']) > 8 else '***'
+        # 返回完整配置（本地存储，不需要隐藏）
         return jsonify({'success': True, 'config': config})
     return jsonify({'success': False, 'config': {}})
 
@@ -111,15 +109,21 @@ def update_config():
     if 'api_key' not in data or not data['api_key']:
         return jsonify({'success': False, 'error': 'API Key 不能为空'})
     
+    # 加载现有配置（保留其他字段）
+    existing_config = load_llm_config() or {}
+    
+    # 合并配置（用户提供的覆盖现有的）
+    merged_config = {**existing_config, **data}
+    
     # 保存配置
-    save_llm_config(data)
+    save_llm_config(merged_config)
     
     # 测试连接
-    test_result = test_llm_connection(data)
+    test_result = test_llm_connection(merged_config)
     
     return jsonify({
         'success': True,
-        'message': '配置已保存',
+        'message': '配置已保存并固化',
         'test_result': test_result
     })
 
@@ -1453,13 +1457,20 @@ HTML_TEMPLATE = """
                 const response = await fetch('/api/config');
                 const data = await response.json();
                 
-                if (data.success && data.config && data.config.provider) {
-                    document.getElementById('config-provider').value = data.config.provider;
-                    updateProviderDefaults();
-                    document.getElementById('config-base-url').value = data.config.base_url || '';
-                    document.getElementById('config-model').value = data.config.model || '';
-                    document.getElementById('config-temperature').value = data.config.temperature || 0.7;
-                    document.getElementById('config-max-tokens').value = data.config.max_tokens || 4096;
+                if (data.success && data.config) {
+                    const cfg = data.config;
+                    // 填充所有配置字段
+                    if (cfg.provider) {
+                        document.getElementById('config-provider').value = cfg.provider;
+                        updateProviderDefaults();
+                    }
+                    document.getElementById('config-api-key').value = cfg.api_key || '';
+                    document.getElementById('config-base-url').value = cfg.base_url || '';
+                    document.getElementById('config-model').value = cfg.model || '';
+                    document.getElementById('config-temperature').value = cfg.temperature || 0.7;
+                    document.getElementById('config-max-tokens').value = cfg.max_tokens || 4096;
+                    
+                    console.log('✅ 配置已加载');
                 }
             } catch (error) {
                 console.error('Failed to load config:', error);
